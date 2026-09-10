@@ -1,22 +1,55 @@
 import type { RenderInput, ContinuationHeader } from './render.js';
 
-/** Separate A4 overlay: first body page blank, subsequent pages numbered. */
-export function buildContinuationHeaderDocument(header: ContinuationHeader, pageCount: number): string {
+/** Replaced after the body page count is known. */
+export const PAGE_COUNT_PLACEHOLDER = '{{INFORME_PAGE_COUNT}}';
+export const DEFAULT_FINAL_FOOTER =
+  'El presente informe medico ha sido firmado por el profesional responsable mediante firma electronica.';
+
+function overlayPages(pageCount: number, pageHtml: (page: number) => string): string {
   if (!Number.isSafeInteger(pageCount) || pageCount < 1) throw new TypeError('Invalid page count');
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { size:A4; margin:0 }
     html,body { margin:0; padding:0 }
-    section { height:297mm; width:210mm; position:relative; break-after:page; }
+    section { height:297mm; width:210mm; position:relative; overflow:hidden; break-after:page; }
     section:last-child { break-after:auto }
     span { position:absolute; font: bold 11pt Arial,Helvetica,sans-serif; white-space:nowrap; }
-  </style></head><body>${Array.from({length:pageCount}, (_, i) => `<section>${i === 0 ? '' : `
-    <span style="left:28pt;top:118pt">INFORME No: ${escapeHtml(header.informeNumber)}</span>
-    <span style="left:28pt;top:135pt">Fecha del Estudio: ${escapeHtml(header.fechaEstudio)}</span>
-    <span style="left:250pt;top:135pt">Hora: ${escapeHtml(header.horaEstudio)}</span>
-    <span style="right:28pt;top:135pt;font-size:10pt">Pagina ${i+1} de ${pageCount}</span>
-    <span style="left:28pt;top:152pt;max-width:400pt;overflow:hidden">Paciente: ${escapeHtml(header.paciente)}</span>
-    <span style="left:450pt;top:152pt">${escapeHtml(header.documento)}</span>
-  `}</section>`).join('')}</body></html>`;
+    img { position:absolute; inset:0; width:210mm; height:297mm; }
+  </style></head><body>${Array.from({ length: pageCount }, (_, i) => `<section>${pageHtml(i + 1)}</section>`).join('')}</body></html>`;
+}
+
+/** Separate A4 overlay: first body page blank, subsequent pages numbered. */
+export function buildContinuationHeaderDocument(header: ContinuationHeader, pageCount: number): string {
+  return buildBodyOverlayDocument({ header, pageCount });
+}
+
+/** Continuation headers from page 2 and optional footer on every body page. */
+export function buildBodyOverlayDocument(options: {
+  header?: ContinuationHeader;
+  pageCount: number;
+  footerText?: string;
+}): string {
+  const footer = options.footerText?.trim()
+    ? `<span style="left:28pt;right:28pt;bottom:38pt;font:8pt Arial,Helvetica,sans-serif;font-weight:400;white-space:normal">${escapeHtml(options.footerText)}</span>`
+    : '';
+  const continuationHeader = options.header;
+  return overlayPages(options.pageCount, (page) => {
+    const header = continuationHeader && page > 1
+      ? `
+    <span style="left:28pt;top:128pt">INFORME No: ${escapeHtml(continuationHeader.informeNumber)}</span>
+    <span style="left:28pt;top:145pt">Fecha del Estudio: ${escapeHtml(continuationHeader.fechaEstudio)}</span>
+    <span style="left:250pt;top:145pt">Hora: ${escapeHtml(continuationHeader.horaEstudio)}</span>
+    <span style="right:60pt;top:145pt;font-size:10pt">Pagina ${page} de ${options.pageCount}</span>
+    <span style="left:28pt;top:162pt;max-width:400pt;overflow:hidden">Paciente: ${escapeHtml(continuationHeader.paciente)}</span>
+    <span style="left:450pt;top:162pt">${escapeHtml(continuationHeader.documento)}</span>
+  `
+      : '';
+    return `${header}${footer}`;
+  });
+}
+
+export function buildBodyBackgroundDocument(imageUrl: string, pageCount: number): string {
+  const src = escapeHtml(assetUrl(imageUrl));
+  return overlayPages(pageCount, () => `<img alt="" src="${src}" />`);
 }
 
 /** Display-ready values: caller controls date format, timezone and finalized snapshots. */
@@ -37,12 +70,22 @@ export interface InformeData {
   codigos?: string;
   modalidadAcceso?: string;
   establecimiento?: string;
-  firma?: { nombre: string; matricula?: string; especialidad?: string; imageUrl?: string };
+  firma?: InformeSignature;
+  firmaResidente?: InformeSignature;
+}
+export interface InformeSignature {
+  nombre: string;
+  matricula?: string;
+  especialidad?: string;
+  imageUrl?: string;
 }
 export interface TemplateOptions {
   mode?: 'preliminary' | 'final';
   includeSignature?: boolean;
+  includeFooter?: boolean;
+  footerText?: string;
   coverBackgroundUrl?: string;
+  bodyBackgroundUrl?: string;
 }
 export function escapeHtml(value: unknown): string {
   return String(value ?? '---').replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -54,11 +97,14 @@ function assetUrl(value: string): string {
   }
   return value;
 }
-export function buildInformeSignature(firma: NonNullable<InformeData['firma']>): string {
+export function buildInformeSignature(
+  firma: InformeSignature,
+  defaultSpecialty = 'Esp. Diagnostico por Imagenes'
+): string {
   return `<section class="signature">
     ${firma.imageUrl ? `<img alt="" src="${escapeHtml(assetUrl(firma.imageUrl))}" style="display:block;max-width:190px;max-height:90px;object-fit:contain;margin-bottom:2px" />` : ''}
     <div>${escapeHtml(firma.nombre)}${firma.matricula ? ` - MP ${escapeHtml(firma.matricula)}` : ''}</div>
-    <div>${escapeHtml(firma.especialidad || 'Esp. Diagnostico por Imagenes')}</div>
+    <div>${escapeHtml(firma.especialidad || defaultSpecialty)}</div>
   </section>`;
 }
 export function buildContinuationHeaderPayload(data: InformeData) {
@@ -78,10 +124,13 @@ export function buildInformeDocuments(data: InformeData, content: string, option
   if (options.mode !== undefined && !['preliminary', 'final'].includes(options.mode)) {
     throw new TypeError('mode must be preliminary or final');
   }
+  const includeFooter = options.includeFooter ?? options.mode === 'final';
   return {
     coverHtml: buildInformeCoverPdfDocument(data, options),
     html: buildInformeBodyPdfDocument(data, content, options),
     continuationHeader: buildContinuationHeaderPayload(data),
+    footerText: includeFooter ? options.footerText || DEFAULT_FINAL_FOOTER : options.footerText,
+    bodyBackgroundUrl: options.bodyBackgroundUrl,
   };
 }
 export function buildInformeCoverPdfDocument(turno: InformeData, options: TemplateOptions = {}) {
@@ -191,7 +240,14 @@ export function buildInformeBodyPdfDocument(
   const fechaImpresion = turno.fechaImpresion || '---';
   const medicoSolicitante = turno.medico_solicitante || '---';
   const medicoInformante = turno.firma?.nombre;
+  const medicoResidente = turno.firmaResidente?.nombre;
   const includeSignature = options.includeSignature ?? options.mode === 'final';
+  const signatures = includeSignature
+    ? [
+        medicoResidente ? buildInformeSignature(turno.firmaResidente!, 'Medico Residente') : '',
+        medicoInformante ? buildInformeSignature(turno.firma!) : '',
+      ].join('')
+    : '';
 
   return `<!doctype html>
 <html>
@@ -322,10 +378,18 @@ export function buildInformeBodyPdfDocument(
         font-size: 10px;
         font-weight: 700;
         line-height: 1.25;
-        margin-left: auto;
-        margin-top: 24px;
         page-break-inside: avoid;
         width: 245px;
+      }
+
+      .signatures {
+        align-items: flex-end;
+        break-inside: avoid;
+        display: flex;
+        gap: 24px;
+        justify-content: flex-end;
+        margin-top: 24px;
+        page-break-inside: avoid;
       }
 
       .watermark {
@@ -361,7 +425,7 @@ export function buildInformeBodyPdfDocument(
         <div class="header-row-full"><span class="label">PACIENTE:</span> ${escapeHtml(turno.paciente)}</div>
         <div><span class="label">INFORME No:</span> ${escapeHtml(informeNumber)}</div>
         <div></div>
-        <div class="page-number"></div>
+        <div class="page-number">Pagina 1 de ${PAGE_COUNT_PLACEHOLDER}</div>
         <div><span class="label">${escapeHtml(turno.identificacion_tipo)}:</span> ${escapeHtml(
           turno.identificacion_numero
         )}</div>
@@ -379,13 +443,13 @@ export function buildInformeBodyPdfDocument(
           medicoSolicitante
         )}</div>
         <div class="header-row-full"><span class="label">Establecimiento:</span> ${escapeHtml(turno.establecimiento || 'AMBULATORIO')}</div>
-        <div class="header-row-full"><span class="label">CODIGOS:</span> ${escapeHtml(turno.codigos)}</div>
+        <div class="header-row-full"><span class="label">CODIGOS:</span> ${escapeHtml(turno.codigos || '---')}</div>
       </div>
       <div class="divider"></div>
     </header>
     <main class="ck-content">
       ${html}
-      ${includeSignature && medicoInformante ? buildInformeSignature(turno.firma!) : ''}
+      ${signatures ? `<div class="signatures">${signatures}</div>` : ''}
     </main>
   </body>
 </html>`;

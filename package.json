@@ -1,6 +1,6 @@
 {
   "name": "informe-pdf",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Server-side HTML report PDFs with covers, continuation headers and PNG previews",
   "type": "module",
   "files": [
@@ -8,6 +8,9 @@
     "README.md",
     "examples"
   ],
+  "bin": {
+    "informe-pdf": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,7 +21,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node dist/server.js",
+    "start": "node dist/cli.js",
     "build": "tsc",
     "test": "npm run build && node --test test/*.test.mjs",
     "prepack": "npm run build",

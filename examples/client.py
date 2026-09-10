@@ -1,29 +1,24 @@
-"""Shared request payload for FastAPI (async) and Django (sync).
-Requires httpx; configure PDF_SERVICE_URL and PDF_SERVICE_TOKEN in the caller.
-"""
+"""Call the installed informe-pdf CLI. No long-running PDF service is required."""
+import json
 import os
-import httpx
+import subprocess
 
-def _config():
-    return (
-        os.environ.get("PDF_SERVICE_URL", "http://127.0.0.1:8090").rstrip("/") + "/render",
-        {"Authorization": "Bearer " + os.environ["PDF_SERVICE_TOKEN"]},
+
+def render_pdf(payload: dict, timeout: int = 90) -> bytes:
+    command = os.environ.get("INFORME_PDF_CLI", "informe-pdf")
+    result = subprocess.run(
+        [command, "render"],
+        input=json.dumps(payload).encode("utf-8"),
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+        env=os.environ,
     )
+    if result.returncode != 0 or not result.stdout.startswith(b"%PDF-"):
+        raise RuntimeError(result.stderr.decode("utf-8", errors="replace") or "informe-pdf failed")
+    return result.stdout
 
-async def render_pdf_async(payload: dict) -> bytes:
-    url, headers = _config()
-    async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.content
 
-def render_pdf_sync(payload: dict) -> bytes:
-    url, headers = _config()
-    with httpx.Client(timeout=90) as client:
-        response = client.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.content
-
-# FastAPI: return Response(await render_pdf_async(payload), media_type="application/pdf")
-# Django: return HttpResponse(render_pdf_sync(payload), content_type="application/pdf")
+# FastAPI: return Response(render_pdf(payload), media_type="application/pdf")
+# Django: return HttpResponse(render_pdf(payload), content_type="application/pdf")
 # Finalization: save bytes to the application-managed path before committing final state.

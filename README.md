@@ -19,7 +19,8 @@ npm test
 npm pack
 ```
 
-Install the generated `informe-pdf-0.2.0.tgz` from another Node.js project with `npm install /path/to/informe-pdf-0.2.0.tgz`.
+Install the generated `informe-pdf-0.3.0.tgz` from another Node.js project with `npm install /path/to/informe-pdf-0.3.0.tgz`.
+That also installs the `informe-pdf` CLI. Python/Django/FastAPI hosts install Node 22, Chromium, qpdf and this package, then invoke the CLI; do not run a separate PDF process.
 For GitHub distribution, attach that tarball to a release and install its URL or the downloaded file.
 No npm publication or open-source license has been configured yet.
 
@@ -66,9 +67,11 @@ const documents = buildInformeDocuments({
   fechaEstudio: '10-09-2026',
   horaEstudio: '10:30',
   firma: { nombre: 'Dra. Ejemplo', matricula: '123' },
+  firmaResidente: { nombre: 'Dr. Residente', matricula: '456' },
 }, '<p>Contenido del informe</p>', {
   mode: 'final',
   // coverBackgroundUrl: '/assets/informe/imageninforme1.png',
+  // bodyBackgroundUrl: '/assets/informe/imageninforme2.png',
 });
 const { pdf } = await renderInformePdf(documents);
 ```
@@ -76,58 +79,42 @@ const { pdf } = await renderInformePdf(documents);
 `InformeData` describes display-ready fields. Dates, timezone conversion, patient identity,
 service labels and immutable finalized snapshots belong to the calling application.
 Use the original medical snapshot when generating a historical report.
-`preliminary` is the default: watermarks on cover/body and no signature.
-`final` removes watermarks and includes the supplied signature by default.
-`includeSignature` can override this; `firma.imageUrl` adds the image.
+`preliminary` is the default: watermarks on cover/body and no signature or footer.
+`final` removes watermarks and includes the supplied signature and legal footer by default.
+`includeSignature` / `includeFooter` can override this; `firma.imageUrl` adds the reporting physician's image.
+When the turno has an assigned resident, callers can provide `firmaResidente` with the same fields
+(`nombre`, optional `matricula`, `especialidad` and `imageUrl`). Both signatures are kept together at
+the end of the report, with the resident first and the reporting physician second.
+`bodyBackgroundUrl` is an optional underlay for body pages; `coverBackgroundUrl` brands the cover.
 This is visual signature rendering, not cryptographic PDF signing.
 
-The design follows the residence preview: cover background only, unbranded body,
-first-page detailed header and simplified continuation headers. It intentionally does not
-reproduce Python's separate body background/footer layers or Ghostscript optimization.
+The Python ReportLab implementation used by TCSE is a separate package:
+[informe-pdf-legacy](https://github.com/xaviermarquez-alba/informe-pdf-legacy).
+Do not add ReportLab drawing to this repository.
+
+The design follows the residence preview for drafts: cover background only, unbranded body,
+first-page detailed header and simplified continuation headers. Final reports also fill
+`Pagina 1 de N` after the body page count is known. Ghostscript optimization is not applied.
 Applications are not automatically migrated and stored PDFs are not regenerated.
 
-## HTTP service for FastAPI and Django
+## CLI for Python, Django and FastAPI
+
+Install the package on the same host as the application, then render one PDF per invocation:
 
 ```sh
-npm ci
-export PDF_SERVICE_TOKEN='replace-with-a-private-random-token'
-npm start
+npm install /path/to/informe-pdf-0.3.0.tgz
+informe-pdf render --input examples/report.json --output informe.pdf
+# or:
+informe-pdf render < examples/report.json > informe.pdf
 ```
 
-By default it listens on `127.0.0.1:8090`. `GET /health` is a process liveness check.
-`POST /render` requires `Authorization: Bearer <token>` and `Content-Type: application/json`.
-
-```sh
-curl --fail-with-body http://127.0.0.1:8090/render \
-  -H "Authorization: Bearer $PDF_SERVICE_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @examples/report.json --output informe.pdf
-```
-
-The JSON accepts `report`, `content` (trusted CKEditor HTML), `template`, `filename`
-and `previewImages`. It also accepts the old `html`/`coverHtml`/`continuationHeader`
-payload. Responses are PDF bytes or JSON `{ pages: [...] }` for previews.
-See [examples/report.json](examples/report.json) and [examples/client.py](examples/client.py)
-for synchronous Django and asynchronous FastAPI clients.
-
-For Docker:
-
-```sh
-export PDF_SERVICE_TOKEN='replace-with-a-private-random-token'
-docker compose up --build -d
-```
-
-The image runs as a non-root user and includes Chromium, qpdf and Poppler.
-Compose binds the port to loopback. On a shared Docker network, clients can use
-`http://pdf:8090`; do not use `localhost` from a different container.
-Mount branding assets read-only and configure `PDF_PUBLIC_DIR` if using `/assets/...`.
-
-Configuration: `HOST`, `PORT`, `CHROME_BIN`, `PDF_SERVICE_TOKEN`, `PDF_PUBLIC_DIR`,
-`PDF_DISABLE_SANDBOX`, `PDF_MAX_BODY_BYTES` (default 5 MiB), `PDF_MAX_CONCURRENT` (default 2).
-The service returns 400 for invalid payloads, 401 for missing/invalid credentials,
-413 for oversized requests, 415 for non-JSON content, 503 when busy and 500 for render failures.
-Application permissions, finalization, file storage and database transactions remain in FastAPI/Django.
-Existing stored PDFs should still be served without rendering again.
+`CHROME_BIN`, `PDF_PUBLIC_DIR` and `PDF_DISABLE_SANDBOX=true` are read from the environment.
+See [examples/client.py](examples/client.py). The JSON accepts `report`, `content` (trusted CKEditor HTML),
+`template`, `filename` and `previewImages`. `template` may include `mode`, `includeSignature`,
+`includeFooter`, `footerText`, `coverBackgroundUrl` and `bodyBackgroundUrl`. Raw `html` /
+`coverHtml` / `continuationHeader` payloads remain valid. Application permissions, finalization,
+file storage and database transactions stay in FastAPI/Django. Existing stored PDFs should still
+be served without rendering again.
 
 ## Next.js route
 
@@ -139,18 +126,19 @@ export const runtime = 'nodejs';
 export const POST = createInformePdfHandler({ publicDir: resolve('public') });
 ```
 
-The adapter accepts the existing JSON fields: `html`, `coverHtml`, `continuationHeader`,
-`previewImages`, and `filename`. It returns PDF bytes or `{ pages: string[] }`.
-Authenticate and authorize the request in your application before calling the handler.
+The adapter runs in-process inside the existing Next.js app. Authenticate and authorize the
+request in your application before calling the handler.
 
-Other Node frameworks can call `renderInformePdf` directly. Python/Django/FastAPI
-projects can call the included HTTP service; this is not a Python package.
+Other Node frameworks can call `renderInformePdf` or `generateInformePdf` directly.
 
 ## Rendering contract
 
 - A4, print backgrounds enabled, CSS page size respected.
 - Cover rendered separately and prepended to body.
 - Continuation header on body pages 2 onward; numbering excludes the cover.
+- First body page includes `Pagina 1 de N` after the page count is known.
+- Final reports overlay the legal footer in the bottom margin unless `includeFooter` is false.
+- Optional `bodyBackgroundUrl` is underlaid on body pages only.
 - Header uses fixed A4 coordinates; reserve top space in your body CSS.
 - Continuation headers render through Chromium, including Spanish accents and Unicode supported by installed fonts.
 - `/assets/...` references can be embedded from `publicDir`; paths outside that directory are rejected.
@@ -159,12 +147,12 @@ projects can call the included HTTP service; this is not a Python package.
 
 ## Deployment
 
-Render trusted HTML only. Scripts and network resources in HTML execute/load in Chromium:
-run rendering in an isolated worker with appropriate network restrictions and resource limits.
-The service bounds request size and concurrency; configure deployment-level render deadlines and network restrictions.
-Incoming requests and browser content loads time out after 30 seconds; external PDF utilities after 60 seconds.
-Sandbox is enabled by default. `disableSandbox: true` is available for an isolated container
-whose runtime cannot support the Chromium sandbox.
-Prefer embedded assets for reproducible PDFs.
+Render trusted HTML only. Scripts and network resources in HTML execute/load in Chromium.
+Install the library into the application image and invoke `informe-pdf render` (or
+`generateInformePdf` in Node) per request. Do not deploy this package as its own always-on app.
+The optional Docker image is a one-shot CLI (`docker run --rm -i informe-pdf render < payload.json > out.pdf`),
+not a long-running service.
+Sandbox is enabled by default. `PDF_DISABLE_SANDBOX=true` is available when the application
+container cannot support the Chromium sandbox. Prefer embedded assets for reproducible PDFs.
 
-The library throws render errors. The HTTP adapter returns generic 500 responses.
+The library throws render errors. The Next.js HTTP adapter returns generic 500 responses.

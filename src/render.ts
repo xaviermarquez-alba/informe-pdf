@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
 import { chromium } from 'playwright-core';
-import { buildContinuationHeaderDocument } from './templates.js';
+import { buildBodyBackgroundDocument, buildBodyOverlayDocument, PAGE_COUNT_PLACEHOLDER } from './templates.js';
 import { rm, mkdir, access, realpath, readdir, readFile, writeFile } from 'fs/promises';
 
 export interface RenderOptions {
@@ -18,6 +18,8 @@ export interface RenderInput {
   html: string;
   coverHtml?: string;
   continuationHeader?: ContinuationHeader;
+  footerText?: string;
+  bodyBackgroundUrl?: string;
   previewImages?: boolean;
 }
 export type RenderResult = { pdf: Buffer; pages?: string[] };
@@ -114,7 +116,7 @@ export async function renderInformePdf(body: RenderInput, options: RenderOptions
     });
 
     const page = await browser.newPage();
-    page.setDefaultTimeout(30_000);
+    page.setDefaultTimeout(60_000);
 
     const renderPdf = async (html: string) => {
       // 'load' avoids hanging forever when an asset is missing; backgrounds are inlined above.
@@ -128,58 +130,102 @@ export async function renderInformePdf(body: RenderInput, options: RenderOptions
       });
     };
 
-    const html = await inlinePublicAssets(body.html, options.publicDir);
+    const hasPageCountPlaceholder = body.html.includes(PAGE_COUNT_PLACEHOLDER);
+    const html = await inlinePublicAssets(
+      hasPageCountPlaceholder ? body.html.replaceAll(PAGE_COUNT_PLACEHOLDER, '1') : body.html,
+      options.publicDir
+    );
     let pdf = await renderPdf(html);
     const hasContinuationHeader =
       body.continuationHeader !== null &&
       typeof body.continuationHeader === 'object' &&
       body.continuationHeader !== undefined;
+    const footerText = typeof body.footerText === 'string' && body.footerText.trim() ? body.footerText.trim() : undefined;
+    const bodyBackgroundUrl =
+      typeof body.bodyBackgroundUrl === 'string' && body.bodyBackgroundUrl.trim()
+        ? body.bodyBackgroundUrl.trim()
+        : undefined;
+    const hasCover = typeof body.coverHtml === 'string' && Boolean(body.coverHtml.trim());
+    const needsWorkspace =
+      hasPageCountPlaceholder ||
+      hasContinuationHeader ||
+      Boolean(footerText) ||
+      Boolean(bodyBackgroundUrl) ||
+      hasCover ||
+      body.previewImages === true;
 
-    if (hasContinuationHeader || (typeof body.coverHtml === 'string' && body.coverHtml.trim())) {
+    if (needsWorkspace) {
       tempDir = join(tmpdir(), `residence-pdf-${randomUUID()}`);
       await mkdir(tempDir, { recursive: true });
     }
 
-    if (tempDir && hasContinuationHeader) {
-      const bodyPath = join(tempDir, 'body.pdf');
-      const overlayPath = join(tempDir, 'continuation-header.pdf');
-      const bodyWithHeaderPath = join(tempDir, 'body-with-continuation-header.pdf');
+    const bodyPath = tempDir ? join(tempDir, 'body.pdf') : '';
+    const writeBody = async (content: Buffer) => {
+      await writeFile(bodyPath, content);
+    };
+    const pageCountOf = async (content: Buffer) => {
+      await writeBody(content);
+      const pageCountResult = await execFileAsync('qpdf', ['--show-npages', bodyPath]);
+      const pageCount = Number.parseInt(pageCountResult.stdout.trim(), 10);
+      if (!Number.isFinite(pageCount) || pageCount < 1) throw new Error('Could not determine PDF page count');
+      return pageCount;
+    };
 
-      await writeFile(bodyPath, pdf);
-
-      try {
-        const pageCountResult = await execFileAsync('qpdf', ['--show-npages', bodyPath]);
-        const pageCount = Number.parseInt(pageCountResult.stdout.trim(), 10);
-
-        if (Number.isFinite(pageCount) && pageCount > 1) {
-          await writeFile(
-            overlayPath,
-            await renderPdf(buildContinuationHeaderDocument(body.continuationHeader as ContinuationHeader, pageCount))
-          );
-          await execFileAsync('qpdf', [
-            bodyPath,
-            '--overlay',
-            overlayPath,
-            '--',
-            bodyWithHeaderPath,
-          ]);
-          pdf = await readFile(bodyWithHeaderPath);
-        }
-      } catch (error) {
-        throw error;
+    if (tempDir && hasPageCountPlaceholder) {
+      const pageCount = await pageCountOf(pdf);
+      if (pageCount !== 1) {
+        pdf = await renderPdf(
+          await inlinePublicAssets(body.html.replaceAll(PAGE_COUNT_PLACEHOLDER, String(pageCount)), options.publicDir)
+        );
       }
     }
 
-    if (tempDir && typeof body.coverHtml === 'string' && body.coverHtml.trim()) {
+    if (tempDir && (hasContinuationHeader || footerText || bodyBackgroundUrl)) {
+      const pageCount = await pageCountOf(pdf);
+
+      if (bodyBackgroundUrl) {
+        const backgroundPath = join(tempDir, 'body-background.pdf');
+        const underlaidPath = join(tempDir, 'body-with-background.pdf');
+        await writeFile(
+          backgroundPath,
+          await renderPdf(await inlinePublicAssets(buildBodyBackgroundDocument(bodyBackgroundUrl, pageCount), options.publicDir))
+        );
+        await execFileAsync('qpdf', [bodyPath, '--underlay', backgroundPath, '--', underlaidPath]);
+        pdf = await readFile(underlaidPath);
+        await writeBody(pdf);
+      }
+
+      if (footerText || (hasContinuationHeader && pageCount > 1)) {
+        const overlayPath = join(tempDir, 'body-overlay.pdf');
+        const bodyWithOverlayPath = join(tempDir, 'body-with-overlay.pdf');
+        await writeFile(
+          overlayPath,
+          await renderPdf(
+            await inlinePublicAssets(
+              buildBodyOverlayDocument({
+                header: hasContinuationHeader ? (body.continuationHeader as ContinuationHeader) : undefined,
+                pageCount,
+                footerText,
+              }),
+              options.publicDir
+            )
+          )
+        );
+        await execFileAsync('qpdf', [bodyPath, '--overlay', overlayPath, '--', bodyWithOverlayPath]);
+        pdf = await readFile(bodyWithOverlayPath);
+      }
+    }
+
+    if (tempDir && hasCover) {
       const coverHtml = await inlinePublicAssets(body.coverHtml as string, options.publicDir);
       const coverPdf = await renderPdf(coverHtml);
       const coverPath = join(tempDir, 'cover.pdf');
-      const bodyPath = join(tempDir, 'body.pdf');
+      const mergedBodyPath = join(tempDir, 'body.pdf');
       const outputPath = join(tempDir, 'merged.pdf');
 
       await writeFile(coverPath, coverPdf);
-      await writeFile(bodyPath, pdf);
-      await execFileAsync('pdfunite', [coverPath, bodyPath, outputPath]);
+      await writeFile(mergedBodyPath, pdf);
+      await execFileAsync('pdfunite', [coverPath, mergedBodyPath, outputPath]);
 
       pdf = await readFile(outputPath);
     }

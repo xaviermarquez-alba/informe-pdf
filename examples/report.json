@@ -12,6 +12,10 @@
     "firma": {
       "nombre": "Dra. Ejemplo",
       "matricula": "123"
+    },
+    "firmaResidente": {
+      "nombre": "Dr. Residente Ejemplo",
+      "matricula": "456"
     }
   },
   "content": "<h2>Informe</h2><p>Contenido de demostración, sin datos reales.</p>",

@@ -1,26 +1,20 @@
-import { renderInformePdf, type RenderInput, type RenderOptions } from './render.js';
+import { defaultRenderOptions, generateInformePdf } from './generate.js';
 import { parsePayload } from './payload.js';
-import { buildInformeDocuments } from './templates.js';
+import type { RenderOptions } from './render.js';
 
-/** Web Request/Response adapter; authenticate callers in the hosting application. */
+/** Web Request/Response adapter for an existing Node app; not a standalone service. */
 export function createInformePdfHandler(options: RenderOptions = {}) {
   return async function POST(request: Request): Promise<Response> {
-    let body;
-    try { body = parsePayload(await request.json()); }
+    let raw: unknown;
+    try { raw = await request.json(); parsePayload(raw); }
     catch { return Response.json({ error: 'Invalid PDF request' }, { status: 400 }); }
-    const filename = typeof body.filename === 'string'
-      ? body.filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 150) || 'preinforme'
-      : 'preinforme';
     try {
-      const input: RenderInput = body.report
-        ? { ...buildInformeDocuments(body.report, body.content!, body.template), previewImages: body.previewImages }
-        : { html: body.html!, coverHtml: body.coverHtml, continuationHeader: body.continuationHeader, previewImages: body.previewImages };
-      const result = await renderInformePdf(input, options);
-      if (body.previewImages === true) return Response.json({ pages: result.pages });
+      const result = await generateInformePdf(raw, { ...defaultRenderOptions(), ...options });
+      if ((raw as { previewImages?: boolean }).previewImages === true) return Response.json({ pages: result.pages });
       return new Response(new Uint8Array(result.pdf), {
         headers: {
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `inline; filename="${filename}.pdf"`,
+          'Content-Disposition': `inline; filename="${result.filename}.pdf"`,
           'Content-Length': String(result.pdf.length),
         },
       });
