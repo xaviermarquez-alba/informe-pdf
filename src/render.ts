@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
 import { chromium } from 'playwright-core';
+import { buildContinuationHeaderDocument } from './templates.js';
 import { rm, mkdir, access, realpath, readdir, readFile, writeFile } from 'fs/promises';
 
 export interface RenderOptions {
@@ -27,9 +28,8 @@ const CHROME_EXECUTABLE_CANDIDATES = [
   '/usr/bin/chromium-browser',
   '/usr/bin/chromium',
 ].filter((path): path is string => Boolean(path));
-const execFileAsync = promisify(execFile);
-const PDF_A4_WIDTH = 595.28;
-const PDF_A4_HEIGHT = 841.89;
+const execFilePromise = promisify(execFile);
+const execFileAsync = (file: string, args: string[]) => execFilePromise(file, args, { timeout: 60_000 });
 
 export type ContinuationHeader = {
   informeNumber?: unknown;
@@ -38,103 +38,6 @@ export type ContinuationHeader = {
   paciente?: unknown;
   documento?: unknown;
 };
-
-function toPdfHeaderText(value: unknown) {
-  return typeof value === 'string' || typeof value === 'number' ? String(value) : '---';
-}
-
-function escapePdfString(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-}
-
-function drawPdfText(
-  value: string,
-  x: number,
-  y: number,
-  options: { bold?: boolean; size?: number } = {}
-) {
-  const font = options.bold ? 'F2' : 'F1';
-  const size = options.size ?? 11;
-
-  return `BT /${font} ${size} Tf ${x} ${y} Td (${escapePdfString(value)}) Tj ET\n`;
-}
-
-function buildContinuationHeaderOverlay(header: ContinuationHeader, pageCount: number) {
-  const chunks: string[] = ['%PDF-1.4\n'];
-  const objects: string[] = [];
-  const addObject = (value: string) => {
-    objects.push(value);
-    return objects.length;
-  };
-  const pagesObjectId = 1;
-
-  objects.push('');
-  const regularFontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  const boldFontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
-  const pageObjectIds: number[] = [];
-
-  for (let page = 1; page <= pageCount; page += 1) {
-    const stream =
-      page === 1
-        ? ''
-        : [
-            drawPdfText(`INFORME No: ${toPdfHeaderText(header.informeNumber)}`, 28, 714, {
-              bold: true,
-              size: 11,
-            }),
-            drawPdfText(`Fecha del Estudio: ${toPdfHeaderText(header.fechaEstudio)}`, 28, 697, {
-              bold: true,
-              size: 11,
-            }),
-            drawPdfText(`Hora: ${toPdfHeaderText(header.horaEstudio)}`, 250, 697, {
-              bold: true,
-              size: 11,
-            }),
-            drawPdfText(`Pagina ${page} de ${pageCount}`, 487, 697, { bold: true, size: 10 }),
-            drawPdfText(`Paciente: ${toPdfHeaderText(header.paciente)}`, 28, 680, {
-              bold: true,
-              size: 11,
-            }),
-            drawPdfText(toPdfHeaderText(header.documento), 450, 680, { bold: true, size: 11 }),
-          ].join('');
-    const contentId = addObject(
-      `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream`
-    );
-    const pageId = addObject(
-      [
-        '<< /Type /Page',
-        `/Parent ${pagesObjectId} 0 R`,
-        `/MediaBox [0 0 ${PDF_A4_WIDTH} ${PDF_A4_HEIGHT}]`,
-        `/Resources << /Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >> >>`,
-        `/Contents ${contentId} 0 R`,
-        '>>',
-      ].join(' ')
-    );
-
-    pageObjectIds.push(pageId);
-  }
-
-  objects[pagesObjectId - 1] =
-    `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageCount} >>`;
-  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesObjectId} 0 R >>`);
-  const offsets = [0];
-
-  objects.forEach((object, index) => {
-    offsets.push(Buffer.byteLength(chunks.join('')));
-    chunks.push(`${index + 1} 0 obj\n${object}\nendobj\n`);
-  });
-
-  const xrefOffset = Buffer.byteLength(chunks.join(''));
-  chunks.push(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
-  offsets.slice(1).forEach((offset) => {
-    chunks.push(`${String(offset).padStart(10, '0')} 00000 n \n`);
-  });
-  chunks.push(
-    `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`
-  );
-
-  return Buffer.from(chunks.join(''));
-}
 
 async function resolveChromeExecutable(explicitPath?: string) {
   for (const executablePath of explicitPath ? [explicitPath] : CHROME_EXECUTABLE_CANDIDATES) {
@@ -191,15 +94,6 @@ async function inlinePublicAssets(html: string, publicDir?: string) {
   return result;
 }
 
-function isMissingExecutableError(error: unknown) {
-  return (
-    error !== null &&
-    typeof error === 'object' &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'ENOENT'
-  );
-}
-
 /**
  * Render trusted HTML into an A4 report, optionally with a cover and page previews.
  * Run server-side. Do not expose unrestricted rendering to untrusted users.
@@ -220,11 +114,13 @@ export async function renderInformePdf(body: RenderInput, options: RenderOptions
     });
 
     const page = await browser.newPage();
+    page.setDefaultTimeout(30_000);
 
     const renderPdf = async (html: string) => {
       // 'load' avoids hanging forever when an asset is missing; backgrounds are inlined above.
       await page.setContent(html, { waitUntil: 'load' });
 
+      await page.evaluate(() => document.fonts.ready);
       return page.pdf({
         format: 'A4',
         printBackground: true,
@@ -258,7 +154,7 @@ export async function renderInformePdf(body: RenderInput, options: RenderOptions
         if (Number.isFinite(pageCount) && pageCount > 1) {
           await writeFile(
             overlayPath,
-            buildContinuationHeaderOverlay(body.continuationHeader as ContinuationHeader, pageCount)
+            await renderPdf(buildContinuationHeaderDocument(body.continuationHeader as ContinuationHeader, pageCount))
           );
           await execFileAsync('qpdf', [
             bodyPath,
@@ -270,9 +166,7 @@ export async function renderInformePdf(body: RenderInput, options: RenderOptions
           pdf = await readFile(bodyWithHeaderPath);
         }
       } catch (error) {
-        if (!isMissingExecutableError(error)) {
-          throw error;
-        }
+        throw error;
       }
     }
 

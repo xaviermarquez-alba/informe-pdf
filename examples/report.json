@@ -1,0 +1,22 @@
+{
+  "report": {
+    "id": "EXAMPLE-1",
+    "paciente": "Paciente de ejemplo",
+    "servicio": "TOMOGRAFIA COMPUTADA",
+    "informeNumber": "IN-001",
+    "fechaEstudio": "10-09-2026",
+    "horaEstudio": "10:30",
+    "fechaImpresion": "10-09-2026 11:00",
+    "identificacion_tipo": "DU",
+    "identificacion_numero": "EJEMPLO",
+    "firma": {
+      "nombre": "Dra. Ejemplo",
+      "matricula": "123"
+    }
+  },
+  "content": "<h2>Informe</h2><p>Contenido de demostración, sin datos reales.</p>",
+  "template": {
+    "mode": "final"
+  },
+  "filename": "informe-ejemplo"
+}

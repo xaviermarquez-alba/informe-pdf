@@ -1,0 +1,13 @@
+services:
+  pdf:
+    build: .
+    environment:
+      PDF_SERVICE_TOKEN: ${PDF_SERVICE_TOKEN:?Set PDF_SERVICE_TOKEN}
+      # Use only inside this isolated rendering container.
+      PDF_DISABLE_SANDBOX: "true"
+    ports:
+      - "127.0.0.1:8090:8090"
+    init: true
+    shm_size: 256mb
+    mem_limit: 1g
+    pids_limit: 256
