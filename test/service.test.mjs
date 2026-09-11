@@ -68,7 +68,7 @@ test('final templates render resident and reporting physician signatures togethe
   assert.match(final.html, /class="signatures"/);
   assert.match(final.html, /Dra\. Residente/);
   assert.match(final.html, /MP 789/);
-  assert.match(final.html, /Medico Residente/);
+  assert.match(final.html, />Medico<\/div>/);
   assert.match(final.html, /data:image\/png;base64,BBBB/);
   assert.ok(final.html.indexOf('Dra. Residente') < final.html.indexOf('Dra. Médica'));
 });

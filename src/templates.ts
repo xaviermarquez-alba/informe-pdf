@@ -244,7 +244,7 @@ export function buildInformeBodyPdfDocument(
   const includeSignature = options.includeSignature ?? options.mode === 'final';
   const signatures = includeSignature
     ? [
-        medicoResidente ? buildInformeSignature(turno.firmaResidente!, 'Medico Residente') : '',
+        medicoResidente ? buildInformeSignature(turno.firmaResidente!, 'Medico') : '',
         medicoInformante ? buildInformeSignature(turno.firma!) : '',
       ].join('')
     : '';
