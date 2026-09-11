@@ -1,7 +1,18 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { defaultRenderOptions, generateInformePdf } from './generate.js';
+
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
 
 function arg(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -47,7 +58,7 @@ async function main(): Promise<void> {
   else await writeFile(outputPath, result.pdf);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isDirectRun()) {
   main().catch((error) => {
     process.stderr.write((error instanceof Error ? error.message : 'Could not generate PDF') + '\n');
     process.exitCode = 1;

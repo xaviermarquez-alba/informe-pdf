@@ -1,8 +1,19 @@
 import { createServer, type Server } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { generateInformePdf } from './generate.js';
 import type { RenderOptions } from './render.js';
+
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
 
 export interface ServiceOptions extends RenderOptions {
   token: string;
@@ -80,7 +91,7 @@ export function createInformePdfServer(options: ServiceOptions): Server {
   server.headersTimeout = Math.min(60_000, requestTimeoutMs);
   return server;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isDirectRun()) {
   const server = createInformePdfServer({
     token: process.env.PDF_SERVICE_TOKEN || '',
     publicDir: process.env.PDF_PUBLIC_DIR,
