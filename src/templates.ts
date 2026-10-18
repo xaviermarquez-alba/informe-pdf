@@ -14,6 +14,11 @@ function overlayPages(pageCount: number, pageHtml: (page: number) => string): st
     section:last-child { break-after:auto }
     span { position:absolute; font: bold 11pt Arial,Helvetica,sans-serif; white-space:nowrap; }
     img { position:absolute; inset:0; width:210mm; height:297mm; }
+    .ch { position:absolute; left:28pt; right:28pt; top:128pt; font: bold 11pt/13pt Arial,Helvetica,sans-serif; }
+    .ch div { display:flex; gap:4pt 24pt; margin-bottom:4pt; }
+    .ch span { position:static; font:inherit; white-space:normal; overflow-wrap:anywhere; }
+    .ch .grow { flex:1; }
+    .ch .r { margin-left:auto; font-size:10pt; white-space:nowrap; }
   </style></head><body>${Array.from({ length: pageCount }, (_, i) => `<section>${pageHtml(i + 1)}</section>`).join('')}</body></html>`;
 }
 
@@ -33,14 +38,14 @@ export function buildBodyOverlayDocument(options: {
     : '';
   const continuationHeader = options.header;
   return overlayPages(options.pageCount, (page) => {
+    // Flow layout so long values wrap instead of being clipped; body top margin (68mm) leaves room for 2 patient lines.
     const header = continuationHeader && page > 1
       ? `
-    <span style="left:28pt;top:128pt">INFORME No: ${escapeHtml(continuationHeader.informeNumber)}</span>
-    <span style="left:28pt;top:145pt">Fecha del Estudio: ${escapeHtml(continuationHeader.fechaEstudio)}</span>
-    <span style="left:250pt;top:145pt">Hora: ${escapeHtml(continuationHeader.horaEstudio)}</span>
-    <span style="right:60pt;top:145pt;font-size:10pt">Pagina ${page} de ${options.pageCount}</span>
-    <span style="left:28pt;top:162pt;max-width:400pt;overflow:hidden">Paciente: ${escapeHtml(continuationHeader.paciente)}</span>
-    <span style="left:450pt;top:162pt">${escapeHtml(continuationHeader.documento)}</span>
+    <div class="ch">
+      <div><span>INFORME No: ${escapeHtml(continuationHeader.informeNumber)}</span></div>
+      <div><span>Fecha del Estudio: ${escapeHtml(continuationHeader.fechaEstudio)}</span><span>Hora: ${escapeHtml(continuationHeader.horaEstudio)}</span><span class="r">Pagina ${page} de ${options.pageCount}</span></div>
+      <div><span class="grow">Paciente: ${escapeHtml(continuationHeader.paciente)}</span><span>${escapeHtml(continuationHeader.documento)}</span></div>
+    </div>
   `
       : '';
     return `${header}${footer}`;
@@ -228,7 +233,11 @@ export function buildInformeCoverPdfDocument(turno: InformeData, options: Templa
 </html>`;
 }
 
-/** Strip pasted highlight backgrounds and Word spell-check marks (span background-image + border-bottom). */
+/**
+ * Strip pasted highlight backgrounds and Word spell-check marks (span background-image + border-bottom),
+ * and drop inline !important: it beats stylesheet !important, so Word's `white-space:pre !important`
+ * would stop text from wrapping and run it off the page.
+ */
 export function stripContentBackgrounds(html: string): string {
   return html.replace(/<(\w+)([^>]*?)\sstyle=(["'])(.*?)\3/gis, (_match, tag: string, attrs: string, quote: string, style: string) => {
     const dropBorder = tag.toLowerCase() === 'span';
@@ -238,6 +247,7 @@ export function stripContentBackgrounds(html: string): string {
         const prop = rule.split(':')[0].trim().toLowerCase();
         return prop && !prop.startsWith('background') && !(dropBorder && prop.startsWith('border'));
       })
+      .map((rule) => rule.replace(/\s*!\s*important\s*$/i, ''))
       .join(';');
     return `<${tag}${attrs}${kept ? ` style=${quote}${kept}${quote}` : ''}`;
   }).replace(/\sbgcolor=(["']).*?\1/gi, '');
@@ -302,24 +312,24 @@ export function buildInformeBodyPdfDocument(
 
       .report-header {
         color: #000;
-        font-size: 18px;
+        font-size: 16px;
         line-height: 1.25;
         margin-bottom: 8mm;
       }
 
       .header-grid {
         display: grid;
-        grid-template-columns: 1.2fr 1fr 0.95fr;
+        /* minmax(0, …) lets long values wrap inside the page instead of widening the grid past it. */
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.95fr);
         gap: 4px 12px;
       }
 
       .header-grid > div {
-        white-space: nowrap;
+        overflow-wrap: anywhere;
       }
 
       .header-row-full {
         grid-column: 1 / -1;
-        white-space: normal !important;
       }
 
       .label {
@@ -347,7 +357,7 @@ export function buildInformeBodyPdfDocument(
       .ck-content,
       .ck-content * {
         font-family: Arial, Helvetica, sans-serif !important;
-        font-size: 18px !important;
+        font-size: 16px !important;
         line-height: 1.35 !important;
         max-width: 100% !important;
         overflow-wrap: anywhere;
@@ -386,9 +396,12 @@ export function buildInformeBodyPdfDocument(
         vertical-align: top;
       }
 
+      /* Cap to the continuation printable height (297 - 68 - 58mm) so unbreakable images are never cut. */
       .ck-content img {
         break-inside: avoid;
-        height: auto;
+        height: auto !important;
+        max-height: 165mm;
+        object-fit: contain;
         max-width: 100%;
         page-break-inside: avoid;
       }
