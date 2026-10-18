@@ -94,7 +94,7 @@ Do not add ReportLab drawing to this repository.
 
 The design follows the residence preview for drafts: cover background only, unbranded body,
 first-page detailed header and simplified continuation headers. Final reports also fill
-`Pagina 1 de N` after the body page count is known. Ghostscript optimization is not applied.
+`Página 1 de N` after the body page count is known. Ghostscript optimization is not applied.
 Applications are not automatically migrated and stored PDFs are not regenerated.
 
 ## CLI for Python, Django and FastAPI
@@ -136,7 +136,7 @@ Other Node frameworks can call `renderInformePdf` or `generateInformePdf` direct
 - A4, print backgrounds enabled, CSS page size respected.
 - Cover rendered separately and prepended to body.
 - Continuation header on body pages 2 onward; numbering excludes the cover.
-- First body page includes `Pagina 1 de N` after the page count is known.
+- First body page includes `Página 1 de N` after the page count is known.
 - Final reports overlay the legal footer in the bottom margin unless `includeFooter` is false.
 - Optional `bodyBackgroundUrl` is underlaid on body pages only.
 - Header uses fixed A4 coordinates; reserve top space in your body CSS.

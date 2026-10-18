@@ -5,7 +5,7 @@ export {
   buildInformeDocuments,
   buildInformeCoverPdfDocument,
   buildInformeBodyPdfDocument,
-  stripContentBackgrounds,
+  sanitizeReportHtml,
   buildInformeSignature,
   buildContinuationHeaderPayload,
   buildContinuationHeaderDocument,

@@ -19,7 +19,7 @@ const report = {
   identificacion_tipo: 'DU', identificacion_numero: 'DEMO',
   firma: { nombre: 'Dra. Médica', matricula: '456' },
 };
-const content = '<p>PRIMERA PAGINA</p><div style="break-before:page">SEGUNDA PAGINA</div>';
+const content = '<p>PRIMERA PAGINA</p>' + '<p>relleno</p>'.repeat(25) + '<p>SEGUNDA PAGINA</p>';
 async function withServer(options, run) {
   const server = createInformePdfServer({ token: 'test-token', disableSandbox: true, ...options });
   server.listen(0, '127.0.0.1');
@@ -100,12 +100,12 @@ test('HTTP renders structured final PDF with Unicode continuation, page numbers 
     assert.match(text,/María Núñez/);
     assert.match(text,/Dra\. Médica/);
     assert.match(text,/MP 456/);
-    assert.match(text,/Pagina 1 de 2/);
+    assert.match(text,/Página 1 de 2/);
     assert.match(text,/firma electronica/);
     assert.doesNotMatch(text,/Informe Preliminar/);
     const pages = text.split('\f');
     assert.ok(pages[0].includes('María Núñez'));
-    assert.ok(pages.some(p => p.includes('Pagina 2 de') && p.includes('María Núñez')));
+    assert.ok(pages.some(p => p.includes('Página 2 de') && p.includes('María Núñez')));
   });
 });
 test('HTTP renders both resident and reporting physician at the end of a final report', async () => {

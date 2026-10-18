@@ -35,6 +35,6 @@ test('renders cover, multipage body, continuation header and PNG previews', asyn
     assert.doesNotMatch(pages[1], /TEST-123/);
     assert.match(pages[2], /SECOND BODY PAGE/);
     assert.match(pages[2], /TEST-123/);
-    assert.match(pages[2], /Pagina 2 de 2/);
+    assert.match(pages[2], /Página 2 de 2/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

@@ -43,7 +43,7 @@ export function buildBodyOverlayDocument(options: {
       ? `
     <div class="ch">
       <div><span>INFORME No: ${escapeHtml(continuationHeader.informeNumber)}</span></div>
-      <div><span>Fecha del Estudio: ${escapeHtml(continuationHeader.fechaEstudio)}</span><span>Hora: ${escapeHtml(continuationHeader.horaEstudio)}</span><span class="r">Pagina ${page} de ${options.pageCount}</span></div>
+      <div><span>Fecha del Estudio: ${escapeHtml(continuationHeader.fechaEstudio)}</span><span>Hora: ${escapeHtml(continuationHeader.horaEstudio)}</span><span class="r">Página ${page} de ${options.pageCount}</span></div>
       <div><span class="grow">Paciente: ${escapeHtml(continuationHeader.paciente)}</span><span>${escapeHtml(continuationHeader.documento)}</span></div>
     </div>
   `
@@ -233,24 +233,55 @@ export function buildInformeCoverPdfDocument(turno: InformeData, options: Templa
 </html>`;
 }
 
+const KEPT_TAGS = new Set([
+  'p', 'br', 'div', 'strong', 'ul', 'ol', 'li', 'figure', 'img',
+  'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th',
+]);
+/** Block tags become plain blocks so their text keeps its own line. */
+const BLOCK_TAGS = new Set([
+  'blockquote', 'pre', 'section', 'article', 'header', 'footer', 'address', 'center', 'main',
+  'aside', 'nav', 'dl', 'dt', 'dd', 'caption', 'figcaption', 'hr',
+]);
+/** Elements whose content is never report text (and could hide or restyle it). */
+const DROPPED_ELEMENTS = /<(script|style|head|title|xml|template|noscript|iframe|object|svg|math)\b[\s\S]*?<\/\1\s*>/gi;
+const SAFE_IMAGE_SRC = /^(https?:\/\/|data:image\/(png|jpeg|gif|webp);base64,)/i;
+
+function attribute(attrs: string, name: string): string | undefined {
+  const match = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(attrs);
+  return match ? (match[2] ?? match[3] ?? match[4]).replace(/"/g, '&quot;') : undefined;
+}
+
 /**
- * Strip pasted highlight backgrounds and Word spell-check marks (span background-image + border-bottom),
- * and drop inline !important: it beats stylesheet !important, so Word's `white-space:pre !important`
- * would stop text from wrapping and run it off the page.
+ * Allow-list pasted report HTML (Word, Google Docs, web, ...): keep paragraphs, bold, lists, tables and
+ * images; drop every style, class and other attribute and unwrap all other tags, keeping their text.
+ * No inline style survives, so nothing pasted can hide, shrink, clip or un-wrap report text.
  */
-export function stripContentBackgrounds(html: string): string {
-  return html.replace(/<(\w+)([^>]*?)\sstyle=(["'])(.*?)\3/gis, (_match, tag: string, attrs: string, quote: string, style: string) => {
-    const dropBorder = tag.toLowerCase() === 'span';
-    const kept = style
-      .split(/;(?![^(]*\))/) // ignore ';' inside url(...)
-      .filter((rule) => {
-        const prop = rule.split(':')[0].trim().toLowerCase();
-        return prop && !prop.startsWith('background') && !(dropBorder && prop.startsWith('border'));
-      })
-      .map((rule) => rule.replace(/\s*!\s*important\s*$/i, ''))
-      .join(';');
-    return `<${tag}${attrs}${kept ? ` style=${quote}${kept}${quote}` : ''}`;
-  }).replace(/\sbgcolor=(["']).*?\1/gi, '');
+export function sanitizeReportHtml(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<!\[[\s\S]*?\]>/g, '') // Word downlevel conditionals, CDATA
+    .replace(DROPPED_ELEMENTS, '')
+    .replace(/<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g, (_tag, close: string, rawName: string, attrs: string) => {
+      const name = rawName.toLowerCase();
+      if (name === 'b') return `<${close}strong>`;
+      if (/^h[1-6]$/.test(name)) return close ? '</strong></p>' : '<p><strong>';
+      if (BLOCK_TAGS.has(name)) return name === 'hr' ? '<br>' : `<${close}div>`;
+      if (!KEPT_TAGS.has(name)) return '';
+      if (close) return name === 'br' || name === 'img' ? '' : `</${name}>`;
+      if (name === 'img') {
+        const src = attribute(attrs, 'src');
+        return src && SAFE_IMAGE_SRC.test(src) ? `<img src="${src}" alt="">` : '';
+      }
+      if (name === 'td' || name === 'th') {
+        const span = ['colspan', 'rowspan']
+          .map((key) => [key, attribute(attrs, key)])
+          .filter(([, value]) => value && /^\d{1,3}$/.test(value))
+          .map(([key, value]) => ` ${key}="${value}"`)
+          .join('');
+        return `<${name}${span}>`;
+      }
+      return `<${name}>`;
+    });
 }
 
 export function buildInformeBodyPdfDocument(
@@ -258,7 +289,7 @@ export function buildInformeBodyPdfDocument(
   content?: string,
   options: TemplateOptions = {}
 ) {
-  const html = stripContentBackgrounds(content || '<p></p>');
+  const html = sanitizeReportHtml(content || '<p></p>');
   const informeNumber = turno.informeNumber || turno.id;
   const fechaEstudio = turno.fechaEstudio;
   const horaEstudio = turno.horaEstudio;
@@ -464,7 +495,7 @@ export function buildInformeBodyPdfDocument(
         <div class="header-row-full"><span class="label">PACIENTE:</span> ${escapeHtml(turno.paciente)}</div>
         <div><span class="label">INFORME No:</span> ${escapeHtml(informeNumber)}</div>
         <div></div>
-        <div class="page-number">Pagina 1 de ${PAGE_COUNT_PLACEHOLDER}</div>
+        <div class="page-number">Página 1 de ${PAGE_COUNT_PLACEHOLDER}</div>
         <div><span class="label">${escapeHtml(turno.identificacion_tipo)}:</span> ${escapeHtml(
           turno.identificacion_numero
         )}</div>
