@@ -228,12 +228,27 @@ export function buildInformeCoverPdfDocument(turno: InformeData, options: Templa
 </html>`;
 }
 
+/** Strip pasted highlight backgrounds and Word spell-check marks (span background-image + border-bottom). */
+export function stripContentBackgrounds(html: string): string {
+  return html.replace(/<(\w+)([^>]*?)\sstyle=(["'])(.*?)\3/gis, (_match, tag: string, attrs: string, quote: string, style: string) => {
+    const dropBorder = tag.toLowerCase() === 'span';
+    const kept = style
+      .split(/;(?![^(]*\))/) // ignore ';' inside url(...)
+      .filter((rule) => {
+        const prop = rule.split(':')[0].trim().toLowerCase();
+        return prop && !prop.startsWith('background') && !(dropBorder && prop.startsWith('border'));
+      })
+      .join(';');
+    return `<${tag}${attrs}${kept ? ` style=${quote}${kept}${quote}` : ''}`;
+  }).replace(/\sbgcolor=(["']).*?\1/gi, '');
+}
+
 export function buildInformeBodyPdfDocument(
   turno: InformeData,
   content?: string,
   options: TemplateOptions = {}
 ) {
-  const html = content || '<p></p>';
+  const html = stripContentBackgrounds(content || '<p></p>');
   const informeNumber = turno.informeNumber || turno.id;
   const fechaEstudio = turno.fechaEstudio;
   const horaEstudio = turno.horaEstudio;
@@ -317,21 +332,27 @@ export function buildInformeBodyPdfDocument(
       }
 
       .ck-content {
-        font-size: 11px;
         margin: 0 auto;
-        max-width: 178mm;
+        /* Narrowest printable width: A4 210mm minus 18mm continuation-page margins. */
+        max-width: 174mm;
       }
 
-      .ck-content h1 {
-        font-size: 15px;
+      /* Pasted content (Word, Google Docs) carries inline fonts and white-space:pre;
+         force one font/size and normal wrapping so text is never clipped. */
+      .ck-content,
+      .ck-content * {
+        font-family: Arial, Helvetica, sans-serif !important;
+        font-size: 14px !important;
+        line-height: 1.35 !important;
+        max-width: 100% !important;
+        overflow-wrap: anywhere;
+        white-space: normal !important;
+        background: none !important;
       }
 
-      .ck-content h2 {
-        font-size: 13px;
-      }
-
-      .ck-content h3 {
-        font-size: 12px;
+      /* Word Online spell/grammar marks are span bottom borders. */
+      .ck-content span {
+        border: none !important;
       }
 
       .ck-content h1,
