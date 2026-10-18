@@ -302,7 +302,7 @@ export function buildInformeBodyPdfDocument(
 
       .report-header {
         color: #000;
-        font-size: 11px;
+        font-size: 18px;
         line-height: 1.25;
         margin-bottom: 8mm;
       }
@@ -313,8 +313,13 @@ export function buildInformeBodyPdfDocument(
         gap: 4px 12px;
       }
 
+      .header-grid > div {
+        white-space: nowrap;
+      }
+
       .header-row-full {
         grid-column: 1 / -1;
+        white-space: normal !important;
       }
 
       .label {
@@ -328,7 +333,7 @@ export function buildInformeBodyPdfDocument(
 
       .divider {
         border-top: 1px solid #111;
-        margin-top: 16mm;
+        margin-top: 3mm;
       }
 
       .ck-content {
@@ -342,7 +347,7 @@ export function buildInformeBodyPdfDocument(
       .ck-content,
       .ck-content * {
         font-family: Arial, Helvetica, sans-serif !important;
-        font-size: 14px !important;
+        font-size: 18px !important;
         line-height: 1.35 !important;
         max-width: 100% !important;
         overflow-wrap: anywhere;
@@ -470,8 +475,8 @@ export function buildInformeBodyPdfDocument(
     </header>
     <main class="ck-content">
       ${html}
-      ${signatures ? `<div class="signatures">${signatures}</div>` : ''}
     </main>
+    ${signatures ? `<div class="signatures">${signatures}</div>` : ''}
   </body>
 </html>`;
 
