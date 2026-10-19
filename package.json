@@ -1,6 +1,6 @@
 {
   "name": "informe-pdf",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Server-side HTML report PDFs with covers, continuation headers and PNG previews",
   "type": "module",
   "files": [
