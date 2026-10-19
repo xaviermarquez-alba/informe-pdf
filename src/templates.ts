@@ -251,10 +251,16 @@ function attribute(attrs: string, name: string): string | undefined {
   return match ? (match[2] ?? match[3] ?? match[4]).replace(/"/g, '&quot;') : undefined;
 }
 
+/** CKEditor image resize writes `width:N%`; keep only that, capped at 100%. */
+function resizedWidth(attrs: string): string {
+  const match = /(?:^|;)\s*width\s*:\s*(\d{1,3}(?:\.\d+)?)%/i.exec(attribute(attrs, 'style') ?? '');
+  return match && Number(match[1]) <= 100 ? ` style="width:${match[1]}%"` : '';
+}
+
 /**
  * Allow-list pasted report HTML (Word, Google Docs, web, ...): keep paragraphs, bold, lists, tables and
  * images; drop every style, class and other attribute and unwrap all other tags, keeping their text.
- * No inline style survives, so nothing pasted can hide, shrink, clip or un-wrap report text.
+ * The only inline style kept is a percentage image width, so nothing pasted can hide, clip or un-wrap report text.
  */
 export function sanitizeReportHtml(html: string): string {
   return html
@@ -270,8 +276,9 @@ export function sanitizeReportHtml(html: string): string {
       if (close) return name === 'br' || name === 'img' ? '' : `</${name}>`;
       if (name === 'img') {
         const src = attribute(attrs, 'src');
-        return src && SAFE_IMAGE_SRC.test(src) ? `<img src="${src}" alt="">` : '';
+        return src && SAFE_IMAGE_SRC.test(src) ? `<img src="${src}" alt=""${resizedWidth(attrs)}>` : '';
       }
+      if (name === 'figure') return `<figure${resizedWidth(attrs)}>`;
       if (name === 'td' || name === 'th') {
         const span = ['colspan', 'rowspan']
           .map((key) => [key, attribute(attrs, key)])
@@ -435,6 +442,11 @@ export function buildInformeBodyPdfDocument(
         object-fit: contain;
         max-width: 100%;
         page-break-inside: avoid;
+      }
+
+      /* Resized images: the figure carries the width, the image fills it. */
+      .ck-content figure[style] img {
+        width: 100%;
       }
 
       .ck-content figure {

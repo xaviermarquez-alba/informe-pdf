@@ -13,7 +13,15 @@ test('keeps paragraphs, bold, lists, tables and images; drops every style and at
     '<p>Hallazgo <strong>grave</strong> oculto</p>' +
       '<ul><li><p>uno</p></li></ul>' +
       '<table><tbody><tr><td colspan="2">celda</td></tr></tbody></table>' +
-      '<figure><img src="data:image/png;base64,AAAA" alt=""></figure>'
+      '<figure style="width:50%"><img src="data:image/png;base64,AAAA" alt=""></figure>'
+  );
+});
+
+test('keeps only a percentage image width from CKEditor resize', () => {
+  const src = 'data:image/png;base64,AAAA';
+  assert.equal(
+    sanitizeReportHtml(`<img src="${src}" style="width:33.5%;height:900px"><figure style="width:500%"></figure><figure style="max-width:10%;color:red"></figure>`),
+    `<img src="${src}" alt="" style="width:33.5%"><figure></figure><figure></figure>`
   );
 });
 
