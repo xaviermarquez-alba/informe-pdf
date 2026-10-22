@@ -396,7 +396,7 @@ export function buildInformeBodyPdfDocument(
       .ck-content * {
         font-family: Arial, Helvetica, sans-serif !important;
         font-size: 16px !important;
-        line-height: 1.35 !important;
+        line-height: 1.5 !important;
         max-width: 100% !important;
         overflow-wrap: anywhere;
         white-space: normal !important;
@@ -416,7 +416,13 @@ export function buildInformeBodyPdfDocument(
       }
 
       .ck-content p {
-        margin: 0 0 8px;
+        margin: 0;
+      }
+
+      .ck-content ul,
+      .ck-content ol {
+        margin: 0;
+        padding-left: 24px;
       }
 
       .ck-content table {
