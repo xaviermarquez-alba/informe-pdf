@@ -43,3 +43,12 @@ test('continuation header wraps long values instead of clipping them', () => {
   assert.ok(out.includes(paciente));
   assert.doesNotMatch(out, /overflow:hidden[^>]*>Paciente/, 'patient name must not be clipped');
 });
+
+test('signature cargo defaults to empty and escapes an explicit prefix', async () => {
+  const { buildInformeSignature } = await import('../dist/templates.js');
+  const signature = { nombre: 'Dr. Ejemplo' };
+  assert.match(buildInformeSignature(signature), /<div>Diagnóstico por Imágenes<\/div>/);
+  assert.match(buildInformeSignature({ ...signature, cargo: 'Esp.' }), /<div>Esp\. Diagnóstico por Imágenes<\/div>/);
+  assert.match(buildInformeSignature({ ...signature, cargo: '<b>' }), /&lt;b&gt; Diagnóstico/);
+  assert.match(buildInformeSignature({ ...signature, cargo: '' }), /<div>Diagnóstico por Imágenes<\/div>/);
+});

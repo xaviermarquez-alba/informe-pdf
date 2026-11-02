@@ -156,3 +156,7 @@ Sandbox is enabled by default. `PDF_DISABLE_SANDBOX=true` is available when the 
 container cannot support the Chromium sandbox. Prefer embedded assets for reproducible PDFs.
 
 The library throws render errors. The Next.js HTTP adapter returns generic 500 responses.
+
+Signature `cargo` is an optional prefix for the specialty line, defaulting to `""`.
+For example, `{ "cargo": "Esp.", "especialidad": "Diagnóstico por Imágenes" }`
+renders `Esp. Diagnóstico por Imágenes`. It applies to both `firma` and `firmaResidente`.

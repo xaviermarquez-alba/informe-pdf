@@ -82,6 +82,7 @@ export interface InformeSignature {
   nombre: string;
   matricula?: string;
   especialidad?: string;
+  cargo?: string;
   imageUrl?: string;
 }
 export interface TemplateOptions {
@@ -104,12 +105,12 @@ function assetUrl(value: string): string {
 }
 export function buildInformeSignature(
   firma: InformeSignature,
-  defaultSpecialty = 'Esp. Diagnostico por Imagenes'
+  defaultSpecialty = 'Diagnóstico por Imágenes'
 ): string {
   return `<section class="signature">
     ${firma.imageUrl ? `<img alt="" src="${escapeHtml(assetUrl(firma.imageUrl))}" style="display:block;max-width:190px;max-height:90px;object-fit:contain;margin-bottom:2px" />` : ''}
     <div>${escapeHtml(firma.nombre)}${firma.matricula ? ` - MP ${escapeHtml(firma.matricula)}` : ''}</div>
-    <div>${escapeHtml(firma.especialidad || defaultSpecialty)}</div>
+    <div>${escapeHtml([firma.cargo?.trim(), firma.especialidad || defaultSpecialty].filter(Boolean).join(' '))}</div>
   </section>`;
 }
 export function buildContinuationHeaderPayload(data: InformeData) {
@@ -307,7 +308,7 @@ export function buildInformeBodyPdfDocument(
   const includeSignature = options.includeSignature ?? options.mode === 'final';
   const signatures = includeSignature
     ? [
-        medicoResidente ? buildInformeSignature(turno.firmaResidente!, 'Medico') : '',
+        medicoResidente ? buildInformeSignature(turno.firmaResidente!, 'Médico') : '',
         medicoInformante ? buildInformeSignature(turno.firma!) : '',
       ].join('')
     : '';
@@ -526,12 +527,12 @@ export function buildInformeBodyPdfDocument(
           turno.protocolo || '---'
         )}</div>
         <div><span class="label">Mod. Acceso:</span> ${escapeHtml(turno.modalidadAcceso || 'Ambulatorio')}</div>
-        <div><span class="label">Fecha Impresion:</span> ${escapeHtml(fechaImpresion)}</div>
-        <div class="header-row-full"><span class="label">MEDICO SOLICITANTE:</span> ${escapeHtml(
+        <div><span class="label">Fecha Impresión:</span> ${escapeHtml(fechaImpresion)}</div>
+        <div class="header-row-full"><span class="label">MÉDICO SOLICITANTE:</span> ${escapeHtml(
           medicoSolicitante
         )}</div>
         <div class="header-row-full"><span class="label">Establecimiento:</span> ${escapeHtml(turno.establecimiento || 'AMBULATORIO')}</div>
-        <div class="header-row-full"><span class="label">CODIGOS:</span> ${escapeHtml(turno.codigos || '---')}</div>
+        <div class="header-row-full"><span class="label">CÓDIGOS:</span> ${escapeHtml(turno.codigos || '---')}</div>
       </div>
       <div class="divider"></div>
     </header>
